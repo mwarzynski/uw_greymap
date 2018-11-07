@@ -1,6 +1,6 @@
 compile:
 	nasm -f elf64 grey-scale.asm
-	ld -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o grey-scale -lc grey-scale.o
+	gcc grey-scale.c grey-scale.o -o grey-scale
 
 clean:
 	rm grey-scale.o grey-scale
