@@ -242,19 +242,17 @@ int main(int argc, char **argv) {
         help();
         return 1;
     }
+
     if (parse_file() != 0) {
         cleanup();
         return 1;
     }
-
     destination = (uint8_t*)malloc(lines*columns);
     if (destination == NULL) {
         cleanup();
         return 1;
     }
-
     grey_scale(source, destination, columns, lines, weights);
-
     if (write_file() != 0) {
         cleanup();
         return 1;
