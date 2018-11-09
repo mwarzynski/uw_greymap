@@ -3,5 +3,5 @@ compile:
 	gcc -Wall -Wextra grey-scale.c grey-scale.o -o grey-scale
 
 clean:
-	rm grey-scale.o grey-scale
+	@rm grey-scale.o grey-scale &> /dev/null
 
