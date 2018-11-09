@@ -10,6 +10,15 @@ void grey_scale(
     uint8_t weights[3]
 );
 
+uint8_t weights[3] = {77, 151, 28};
+uint8_t *source = NULL;
+uint8_t *destination = NULL;
+uint64_t columns = 0;
+uint64_t lines = 0;
+int max_color = 255;
+char *input_filename, *output_filename;
+int input_file_binary = 0;
+
 void help() {
     printf("Command: ./grey-scale input output\n");
     printf("You may also define the weights for the RGB colors by:\n");
@@ -17,138 +26,7 @@ void help() {
     printf("Example: ./grey-scale image/2052.ppm output/2052.pgm\n");
 }
 
-int read_ppm_file_binary(
-        FILE *fd,
-        uint8_t **colors,
-        long length
-) {
-    long offset_current, offset_endfile, bytes_left;
-    offset_current = ftell(fd);
-    fseek(fd, 0, SEEK_END);
-    offset_endfile = ftell(fd);
-    fseek(fd, offset_current, SEEK_SET);
-
-    bytes_left = offset_endfile - offset_current;
-    if (bytes_left < length*3) {
-        fprintf(stderr, "Error: input file is too short\n");
-        return 1;
-    }
-    *colors = (uint8_t*)malloc(bytes_left);
-    if (*colors == NULL) {
-        perror("1Error: ");
-        return 1;
-    }
-
-    if (fread(*colors, bytes_left, 1, fd) != 1) {
-        free(*colors);
-        return 1;
-    }
-
-    return 0;
-}
-
-int read_ppm_file(
-        char *filename,
-        uint8_t **colors,
-        uint64_t *lines,
-        uint64_t *columns
-) {
-    FILE *fd;
-    fd = fopen(filename, "rb");
-    if (fd == NULL) {
-        perror("3Error: ");
-        return 1;
-    }
-
-    char magic[2];
-    if (fscanf(fd, "%c%c\n", &magic[0], &magic[1]) <= 0) {
-        perror("4Error: ");
-        fclose(fd);
-        return 1;
-    }
-    if (magic[0] != 'P') {
-        fclose(fd);
-        fprintf(stderr, "Error: invalid file's magic number\n");
-        return 1;
-    }
-
-    int binary;
-    switch (magic[1]) {
-        case '3':
-            binary = 0;
-            break;
-        case '6':
-            binary = 1;
-            break;
-        default:
-            fclose(fd);
-            fprintf(stderr, "Error: invalid file's magic number\n");
-            return 2;
-    }
-
-    if (fscanf(fd, "%ld%ld\n", columns, lines) <= 0) {
-        perror("5Error: ");
-        fclose(fd);
-        return 1;
-    }
-    if (*columns == 0 || *lines == 0) {
-        perror("Error: ");
-        fclose(fd);
-        return 1;
-    }
-
-    int maximum_color;
-    if (fscanf(fd, "%d\n", &maximum_color) <= 0) {
-        perror("Error: ");
-        fclose(fd);
-        return 1;
-    }
-
-    int status;
-    if (binary) {
-        status = read_ppm_file_binary(fd, colors, (*columns)*(*lines));
-    } else {
-        printf("ASCII PPM file is not supported for now.\n");
-        status = 1;
-    }
-    fclose(fd);
-    return status;
-}
-
-int save_pgm_file(
-        char *filename,
-        uint8_t *colors,
-        uint64_t columns,
-        uint64_t lines
-) {
-    FILE *fd;
-    fd = fopen(filename, "wb");
-    if (fd == NULL) {
-        return 1;
-    }
-
-    if (fprintf(fd, "P5\n%ld %ld\n%d\n", columns, lines, 255) < 0) {
-        fclose(fd);
-        return 1;
-    }
-
-    if (fwrite(colors, columns*lines, 1, fd) != 1) {
-        fclose(fd);
-        return 1;
-    }
-
-    fclose(fd);
-    return 0;
-}
-
-int main(int argc, char **argv) {
-    uint8_t weights[3] = {77, 151, 28};
-    uint8_t *source = NULL;
-    uint8_t *destination = NULL;
-    uint64_t columns = 0;
-    uint64_t lines = 0;
-
-    char *input_filename, *output_filename;
+int parse_arguments(int argc, char *argv[]) {
     switch (argc) {
         case 3:
             input_filename = argv[1];
@@ -162,34 +40,201 @@ int main(int argc, char **argv) {
             output_filename = argv[5];
             break;
         default:
-            help();
-            return 0;
+            return 1;
+    }
+    return 0;
+}
+
+int parse_header(FILE *fd, size_t *header_size) {
+    size_t buf_len = 1024;
+    *header_size = 0;
+    char buffer[buf_len];
+    if (fgets(buffer, buf_len, fd) == NULL) {
+        perror("parse_header fgets");
+        return 1;
     }
 
-    if (read_ppm_file(input_filename, &source, &columns, &lines) != 0) {
+    // parse magic number
+    // P3 (ascii) or P6 (binary)
+    if (buffer[0] != 'P') {
+        fprintf(stderr, "Invalid magic header.\n");
+        return 1;
+    }
+    switch (buffer[1]) {
+        case '3':
+            break;
+        case '6':
+            input_file_binary = 1;
+            break;
+        default:
+            fprintf(stderr, "Invalid magic header.\n");
+            return 1;
+    }
+    if (buffer[2] != 10) {
+        fprintf(stderr, "No new line after magic number.\n");
+        return 1;
+    }
+
+    size_t i = 3;
+    int comment_mode = 0;
+    while (1) {
+        // if buffer ended, load more bytes from file
+        if (i == 0 && buffer[i] == 0) {
+            break;
+        }
+        if (buffer[i] == 0) {
+            *header_size += i;
+            i = 0;
+            if (fgets(buffer, buf_len, fd) == NULL) {
+                perror("parse_header while-fgets");
+                return 1;
+            }
+            continue;
+        }
+        // if we are in comment, wait for the new line
+        if (comment_mode) {
+            if (buffer[i] == '\n') {
+                comment_mode = 0;
+            }
+            i++;
+            continue;
+        }
+        // if this is '#', enter comment mode
+        if (buffer[i] == '#') {
+            comment_mode = 1;
+            i++;
+            continue;
+        }
+        if (buffer[i] == ' ') {
+            i++;
+            continue;
+        }
+
+        break;
+    }
+    if (buffer[i] == 0) {
+        fprintf(stderr, "parse_header: got EOF\n");
+        return 1;
+    }
+    *header_size += i;
+
+    // seek to the beginning of the valid 'lines columns'
+    if (fseek(fd, *header_size, SEEK_SET) != 0) {
+        perror("parse_header: fseek fd before dimensions");
+        return 1;
+    }
+    if (fscanf(fd, "%ld %ld\n", &columns, &lines) <= 0) {
+        perror("parse_header: fscanf parse dimensions");
+        return 1;
+    }
+    if (fscanf(fd, "%d\n", &max_color) <= 0) {
+        perror("parse_header: fscanf max color line");
+        return 1;
+    }
+    long offset = ftell(fd);
+    if (offset == -1) {
+        perror("parse_header: getting end header offset");
+        return 1;
+    }
+    *header_size = offset;
+
+    return 0;
+}
+
+int parse_content_binary(FILE *fd, size_t header_size) {
+    long end_file_offset;
+    if (fseek(fd, 0, SEEK_END) == -1) {
+        perror("parse_content_binary: could not seek to end");
+        return 1;
+    }
+    end_file_offset = ftell(fd);
+    if (end_file_offset == -1) {
+        perror("parse_content_binary: ftell end file offset");
+        return 1;
+    }
+    if (fseek(fd, header_size, SEEK_SET) == -1) {
+        perror("parse_content_binary: could not seek after header");
+        return 1;
+    }
+    size_t content_size = end_file_offset - header_size;
+    if (fread(source, content_size, 1, fd) <= 0) {
+        perror("parse_content_binary: fread");
+        return 1;
+    }
+    return 0;
+}
+
+int parse_file() {
+    FILE *fd = fopen(input_filename, "rb");
+    if (fd == NULL) {
+        return 1;
+    }
+
+    size_t header_size;
+    if (parse_header(fd, &header_size) != 0) {
+        fclose(fd);
+        return 1;
+    }
+
+    // allocate memory for source data
+    source = (uint8_t*)malloc(columns*lines*3);
+    if (source == NULL) {
+        perror("parse_file: allocating memory");
+        fclose(fd);
+        return 1;
+    }
+
+    int status;
+    if (input_file_binary) {
+        status = parse_content_binary(fd, header_size);
+    } else {
+        status = 0;
+    }
+    fclose(fd);
+    return status;
+}
+
+int write_file() {
+    FILE *fd = fopen(output_file, "wb");
+
+    return 0;
+}
+
+void cleanup() {
+    if (source != NULL) {
+        free(source);
+    }
+    if (destination != NULL) {
+        free(destination);
+    }
+}
+
+int main(int argc, char **argv) {
+    if (parse_arguments(argc, argv) != 0) {
+        help();
+        return 1;
+    }
+    if (parse_file() != 0) {
+        cleanup();
         return 1;
     }
 
     destination = (uint8_t*)malloc(lines*columns);
     if (destination == NULL) {
-        free(source);
+        cleanup();
         return 1;
     }
 
     grey_scale(source, destination, columns, lines, weights);
-    if (save_pgm_file(
-                output_filename,
-                destination,
-                columns,
-                lines
-            ) != 0) {
-        free(source);
-        free(destination);
-        return 1;
-    }
 
-    free(source);
-    free(destination);
+    for (uint64_t i = 0; i < lines; i++) {
+        for (uint64_t j = 0; j < columns; j++) {
+            printf("%hx ", source[i*columns + j]);
+        }
+    }
+    printf("\n");
+
+    cleanup();
     return 0;
 }
 
