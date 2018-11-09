@@ -164,6 +164,17 @@ int parse_content_binary(FILE *fd, size_t header_size) {
     return 0;
 }
 
+int parse_content_ascii(FILE *fd) {
+    uint64_t len = columns*lines*3;
+    for (uint64_t i = 0; i < len; i++) {
+        if (fscanf(fd, "%hhd", &source[i]) <= 0) {
+            perror("parse_content_ascii: reading color");
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int parse_file() {
     FILE *fd = fopen(input_filename, "rb");
     if (fd == NULL) {
@@ -176,7 +187,6 @@ int parse_file() {
         return 1;
     }
 
-    // allocate memory for source data
     source = (uint8_t*)malloc(columns*lines*3);
     if (source == NULL) {
         perror("parse_file: allocating memory");
@@ -188,7 +198,7 @@ int parse_file() {
     if (input_file_binary) {
         status = parse_content_binary(fd, header_size);
     } else {
-        status = 0;
+        status = parse_content_ascii(fd);
     }
     fclose(fd);
     return status;
