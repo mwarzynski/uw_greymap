@@ -195,8 +195,26 @@ int parse_file() {
 }
 
 int write_file() {
-    FILE *fd = fopen(output_file, "wb");
+    FILE *fd = fopen(output_filename, "wb");
+    if (fd == NULL) {
+        perror("write_file: could not open output file");
+        return 1;
+    }
 
+    // Header.
+    if (fprintf(fd, "P5\n%ld %ld\n%d\n", columns, lines, max_color) < 0) {
+        perror("write_file: writing header");
+        fclose(fd);
+        return 1;
+    }
+
+    // Content.
+    if (fwrite(destination, lines*columns, 1, fd) < 1) {
+        perror("write_file: writing content");
+        fclose(fd);
+        return 1;
+    }
+    fclose(fd);
     return 0;
 }
 
@@ -227,12 +245,10 @@ int main(int argc, char **argv) {
 
     grey_scale(source, destination, columns, lines, weights);
 
-    for (uint64_t i = 0; i < lines; i++) {
-        for (uint64_t j = 0; j < columns; j++) {
-            printf("%hx ", source[i*columns + j]);
-        }
+    if (write_file() != 0) {
+        cleanup();
+        return 1;
     }
-    printf("\n");
 
     cleanup();
     return 0;
