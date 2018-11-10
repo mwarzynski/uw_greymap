@@ -45,14 +45,15 @@ int parse_arguments(int argc, char *argv[]) {
     return 0;
 }
 
-int parse_header(FILE *fd, size_t *header_size) {
+int parse_header(FILE *fd) {
+    size_t header_size = 0;
     size_t buf_len = 1024;
-    *header_size = 0;
     char buffer[buf_len];
     if (fgets(buffer, buf_len, fd) == NULL) {
         perror("parse_header fgets");
         return 1;
     }
+
 
     // parse magic number
     // P3 (ascii) or P6 (binary)
@@ -64,8 +65,8 @@ int parse_header(FILE *fd, size_t *header_size) {
         case '3':
             break;
         case '6':
-            input_file_binary = 1;
-            break;
+            fprintf(stderr, "P6 format is not supported\n");
+            return 1;
         default:
             fprintf(stderr, "Invalid magic header.\n");
             return 1;
@@ -83,7 +84,7 @@ int parse_header(FILE *fd, size_t *header_size) {
             break;
         }
         if (buffer[i] == 0) {
-            *header_size += i;
+            header_size += i;
             i = 0;
             if (fgets(buffer, buf_len, fd) == NULL) {
                 perror("parse_header while-fgets");
@@ -116,10 +117,10 @@ int parse_header(FILE *fd, size_t *header_size) {
         fprintf(stderr, "parse_header: got EOF\n");
         return 1;
     }
-    *header_size += i;
+    header_size += i;
 
     // seek to the beginning of the valid 'lines columns'
-    if (fseek(fd, *header_size, SEEK_SET) != 0) {
+    if (fseek(fd, header_size, SEEK_SET) != 0) {
         perror("parse_header: fseek fd before dimensions");
         return 1;
     }
@@ -131,47 +132,6 @@ int parse_header(FILE *fd, size_t *header_size) {
         perror("parse_header: fscanf max color line");
         return 1;
     }
-    long offset = ftell(fd);
-    if (offset == -1) {
-        perror("parse_header: getting end header offset");
-        return 1;
-    }
-    *header_size = offset;
-
-    return 0;
-}
-
-int parse_content_binary(FILE *fd, size_t header_size) {
-    long end_file_offset;
-    if (fseek(fd, 0, SEEK_END) == -1) {
-        perror("parse_content_binary: could not seek to end");
-        return 1;
-    }
-    end_file_offset = ftell(fd);
-    if (end_file_offset == -1) {
-        perror("parse_content_binary: ftell end file offset");
-        return 1;
-    }
-    if (fseek(fd, header_size, SEEK_SET) == -1) {
-        perror("parse_content_binary: could not seek after header");
-        return 1;
-    }
-    size_t content_size = end_file_offset - header_size;
-    if (fread(source, content_size, 1, fd) <= 0) {
-        perror("parse_content_binary: fread");
-        return 1;
-    }
-    return 0;
-}
-
-int parse_content_ascii(FILE *fd) {
-    uint64_t len = columns*lines*3;
-    for (uint64_t i = 0; i < len; i++) {
-        if (fscanf(fd, "%hhd", &source[i]) <= 0) {
-            perror("parse_content_ascii: reading color");
-            return 1;
-        }
-    }
     return 0;
 }
 
@@ -181,8 +141,7 @@ int parse_file() {
         return 1;
     }
 
-    size_t header_size;
-    if (parse_header(fd, &header_size) != 0) {
+    if (parse_header(fd) != 0) {
         fclose(fd);
         return 1;
     }
@@ -194,14 +153,17 @@ int parse_file() {
         return 1;
     }
 
-    int status;
-    if (input_file_binary) {
-        status = parse_content_binary(fd, header_size);
-    } else {
-        status = parse_content_ascii(fd);
+    uint64_t len = columns*lines*3;
+    for (uint64_t i = 0; i < len; i++) {
+        if (fscanf(fd, "%hhd", &source[i]) <= 0) {
+            perror("parse_file: reading color");
+            fclose(fd);
+            return 1;
+        }
     }
+
     fclose(fd);
-    return status;
+    return 0;
 }
 
 int write_file() {
@@ -247,7 +209,7 @@ int main(int argc, char **argv) {
         cleanup();
         return 1;
     }
-    destination = (uint8_t*)malloc(lines*columns);
+    destination = (uint8_t*)malloc(lines*columns+1);
     if (destination == NULL) {
         cleanup();
         return 1;
