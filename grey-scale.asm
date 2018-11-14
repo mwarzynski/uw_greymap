@@ -42,10 +42,11 @@ compute:
     mov rax, rdx
     add rax, r9
     add rax, r10
-    ; Divide the sum by 0x100.
-    mov r10, 0x100
-    mov rdx, 0
-    div r10d
+    ; Divide the sum by 256 = 0x100.
+    ; We may shift the value to the right instead.
+    ; 256 = 10 000 000 in binary representation (8 bits).
+    ; Therefore, we should shift 8 bits.
+    shr rax, 8
 
     ; Store the color in the result array.
     mov WORD[rsi], ax
