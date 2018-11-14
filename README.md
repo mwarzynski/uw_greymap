@@ -1,13 +1,15 @@
-# GreyMap and Assembler
+# Grey map and assembler
+
+![Input image (ppm format).](images/duck-input.png) ![Output image (pgm format).](images/duck-output.png)
 
 ## Description
 
 A picture in the form of a pixel matrix is given. The color of each pixel is stored as 24 bits, 8 bits for each color (RGB). Write the procedure in Assembler which will convert the image into a grayscale using the weighted average.
 
 Because the human eyes differently react to the colors, the coefficients for individual components cannot be the same, it is usually assumed:
- - 77 for red
- - 151 for green
- - 28 for blue
+ - `77` for red
+ - `151` for green
+ - `28` for blue
 
 The coefficients sum up to 256.
 
