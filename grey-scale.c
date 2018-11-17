@@ -138,6 +138,7 @@ int parse_header(FILE *fd) {
 int parse_file() {
     FILE *fd = fopen(input_filename, "rb");
     if (fd == NULL) {
+        perror("parse_file: could not open input file");
         return 1;
     }
 
